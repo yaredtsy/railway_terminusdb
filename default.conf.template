@@ -1,0 +1,46 @@
+server {
+    # Railway provides the PORT environment variable dynamically
+    listen ${PORT};
+    server_name _;
+
+    # Disable body size limits for large file uploads
+    client_max_body_size 0;
+
+    # Disable buffering to stream files directly to TerminusDB. 
+    # This is crucial for large TUS uploads to prevent memory/timeout issues.
+    proxy_request_buffering off;
+    proxy_buffering off;
+    
+    # Required for streaming data efficiently
+    proxy_http_version 1.1;
+
+    location / {
+        # Proxy to the internal Railway TerminusDB instance
+        proxy_pass http://terminusdb.railway.internal:6363;
+
+        # Forward important headers to the database
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # -------------------------------------------------------------
+        # THE FIX FOR YOUR SOCKET ERROR:
+        # Intercept the Location header (which contains the internal URL)
+        # and rewrite it to match the host that made the initial request.
+        # -------------------------------------------------------------
+        proxy_redirect http://terminusdb.railway.internal:6363/ /;
+
+        # Strip any existing CORS headers from TerminusDB to prevent duplicates
+        proxy_hide_header 'Access-Control-Allow-Origin';
+        proxy_hide_header 'Access-Control-Allow-Methods';
+        proxy_hide_header 'Access-Control-Allow-Headers';
+        proxy_hide_header 'Access-Control-Expose-Headers';
+
+        # Add robust CORS and TUS headers back in to all responses
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD' always;
+        add_header 'Access-Control-Allow-Headers' 'Tus-Resumable, Upload-Offset, Upload-Length, Upload-Metadata, Upload-Defer-Length, Upload-Concat, Content-Type, Authorization' always;
+        add_header 'Access-Control-Expose-Headers' 'Tus-Resumable, Tus-Version, Tus-Extension, Tus-Max-Size, Upload-Offset, Upload-Length, Upload-Metadata, Location, Content-Type' always;
+    }
+}
