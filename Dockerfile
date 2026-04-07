@@ -1,11 +1,10 @@
 FROM nginx:alpine
 
-# Remove the default NGINX configuration
-RUN rm /etc/nginx/conf.d/default.conf
+# Copy your custom nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
 
-# Copy our template file into the special templates directory.
-# The NGINX entrypoint script will automatically read this, replace ${PORT}, 
-# and output it to /etc/nginx/conf.d/default.conf when the container boots.
-COPY default.conf.template /etc/nginx/templates/default.conf.template
+# Expose port 80 (Railway will automatically detect and route to this)
+EXPOSE 80
 
-# We don't need a custom CMD or ENTRYPOINT, the alpine image handles it securely.
+# Start Nginx
+CMD ["nginx", "-g", "daemon off;"]
