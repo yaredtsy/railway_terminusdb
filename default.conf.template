@@ -1,34 +1,32 @@
 server {
-    # Railway provides the PORT environment variable dynamically
     listen ${PORT};
     server_name _;
 
     # Disable body size limits for large file uploads
     client_max_body_size 0;
 
-    # Disable buffering to stream files directly to TerminusDB. 
-    # This is crucial for large TUS uploads to prevent memory/timeout issues.
+    # Disable buffering to stream files directly.
+    # Because we disable buffering, NGINX will pass the original Content-Length
+    # directly to TerminusDB instead of converting to Transfer-Encoding: chunked
     proxy_request_buffering off;
     proxy_buffering off;
-    
-    # Required for streaming data efficiently
     proxy_http_version 1.1;
 
     location / {
-        # Proxy to the internal Railway TerminusDB instance
         proxy_pass http://terminusdb.railway.internal:6363;
 
-        # Forward important headers to the database
-        proxy_set_header Host $http_host;
+        # ---------------------------------------------------------
+        # THE FIX FOR 502 CONNECTION REFUSED:
+        # Override the Host header with the internal domain.
+        # This matches what upstreamHeaders.delete("host") did in Bun.
+        # ---------------------------------------------------------
+        proxy_set_header Host terminusdb.railway.internal:6363;
+
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # -------------------------------------------------------------
-        # THE FIX FOR YOUR SOCKET ERROR:
-        # Intercept the Location header (which contains the internal URL)
-        # and rewrite it to match the host that made the initial request.
-        # -------------------------------------------------------------
+        # Rewrite the internal Location header to the public proxy domain
         proxy_redirect http://terminusdb.railway.internal:6363/ /;
 
         # Strip any existing CORS headers from TerminusDB to prevent duplicates
@@ -37,10 +35,22 @@ server {
         proxy_hide_header 'Access-Control-Allow-Headers';
         proxy_hide_header 'Access-Control-Expose-Headers';
 
-        # Add robust CORS and TUS headers back in to all responses
+        # Add CORS and TUS headers back in (added Upload-Checksum based on your Bun script)
         add_header 'Access-Control-Allow-Origin' '*' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD' always;
-        add_header 'Access-Control-Allow-Headers' 'Tus-Resumable, Upload-Offset, Upload-Length, Upload-Metadata, Upload-Defer-Length, Upload-Concat, Content-Type, Authorization' always;
+        add_header 'Access-Control-Allow-Headers' 'Tus-Resumable, Upload-Offset, Upload-Length, Upload-Metadata, Upload-Defer-Length, Upload-Concat, Upload-Checksum, Content-Type, Authorization' always;
         add_header 'Access-Control-Expose-Headers' 'Tus-Resumable, Tus-Version, Tus-Extension, Tus-Max-Size, Upload-Offset, Upload-Length, Upload-Metadata, Location, Content-Type' always;
+        
+        # Handle OPTIONS requests quickly
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' '*';
+            add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD';
+            add_header 'Access-Control-Allow-Headers' 'Tus-Resumable, Upload-Offset, Upload-Length, Upload-Metadata, Upload-Defer-Length, Upload-Concat, Upload-Checksum, Content-Type, Authorization';
+            add_header 'Access-Control-Expose-Headers' 'Tus-Resumable, Tus-Version, Tus-Extension, Tus-Max-Size, Upload-Offset, Upload-Length, Upload-Metadata, Location, Content-Type';
+            add_header 'Access-Control-Max-Age' 1728000;
+            add_header 'Content-Type' 'text/plain; charset=utf-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
     }
 }
