@@ -9,4 +9,4 @@ COPY nginx.conf /etc/nginx/nginx.conf.template
 
 EXPOSE 80
 
-CMD ["sh", "-c", "envsubst '$TERMINUSDB_UPSTREAM' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'"]
+CMD ["sh", "-c", "export TERMINUSDB_UPSTREAM=\"${TERMINUSDB_UPSTREAM#http://}\"; export TERMINUSDB_UPSTREAM=\"${TERMINUSDB_UPSTREAM#https://}\"; envsubst '$TERMINUSDB_UPSTREAM' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'"]
